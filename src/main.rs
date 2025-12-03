@@ -5,6 +5,7 @@ use arrow::record_batch::RecordBatch;
 use arrow::util::pretty::pretty_format_batches;
 use clap::Parser;
 use gpui::{div, prelude::*, px, size, App, Application, Bounds, WindowBounds, WindowOptions};
+use gpui_component::scroll::ScrollableElement;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::file::reader::FileReader;
 use parquet::file::reader::SerializedFileReader;
@@ -124,6 +125,8 @@ fn launch_ui(preview: DataPreview) {
     let preview_data = preview.clone();
 
     Application::new().run(move |app: &mut App| {
+        gpui_component::init(app);
+
         let bounds = Bounds::centered(None, size(px(900.0), px(700.0)), app);
         app.open_window(
             WindowOptions {
@@ -178,6 +181,7 @@ impl gpui::Render for PreviewView {
                     .w_full()
                     .h_full()
                     .font_family("monospace")
+                    .overflow_scrollbar()
                     .child(body),
             )
     }
