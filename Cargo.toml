@@ -7,13 +7,14 @@ description = "A Rust-based Parquet inspector with a GPUI front-end"
 license = "MIT"
 
 [dependencies]
-arrow = "53.0.0"
-parquet = "53.0.0"
+arrow = { version = "57.1.0", features = ["prettyprint"] }
+parquet = "57.1.0"
 clap = { version = "4.5", features = ["derive"] }
-gpui = { version = "0.1.2", default-features = true }
-thiserror = "1.0"
+gpui = { version = "0.2.2", default-features = true }
+thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
+tempfile = "3.14.0"
 
 [package.metadata.bundle]
 identifier = "com.example.parquet-viewer"
