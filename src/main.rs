@@ -3,9 +3,13 @@ use std::path::PathBuf;
 
 use arrow::record_batch::RecordBatch;
 use arrow::util::pretty::pretty_format_batches;
+use arrow::util::display::array_value_to_string;
 use clap::Parser;
-use gpui::{div, prelude::*, px, size, App, Application, Bounds, WindowBounds, WindowOptions};
-use gpui_component::scroll::ScrollableElement;
+use gpui::{
+    div, prelude::*, px, rgb, size, App, Application, Bounds, MouseButton, WindowBounds,
+    WindowOptions,
+};
+use gpui_component::{scroll::ScrollableElement, StyledExt};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::file::reader::FileReader;
 use parquet::file::reader::SerializedFileReader;
@@ -48,6 +52,8 @@ enum ViewerError {
 struct DataPreview {
     schema: String,
     formatted_rows: String,
+    columns: Vec<String>,
+    rows: Vec<Vec<String>>,
     row_count: usize,
     column_count: usize,
 }
@@ -97,6 +103,42 @@ fn load_preview(path: &PathBuf, row_limit: usize) -> Result<DataPreview, ViewerE
         }
     }
 
+    let columns = if let Some(batch) = batches.first() {
+        batch
+            .schema()
+            .fields()
+            .iter()
+            .map(|field| field.name().clone())
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let mut rows = Vec::new();
+    for batch in &batches {
+        for row_index in 0..batch.num_rows() {
+            let mut row = Vec::new();
+            for column_index in 0..batch.num_columns() {
+                let column = batch.column(column_index);
+                let value = if column.is_null(row_index) {
+                    "null".to_string()
+                } else {
+                    array_value_to_string(column.as_ref(), row_index)?
+                };
+                row.push(value);
+            }
+            rows.push(row);
+
+            if rows.len() >= row_limit {
+                break;
+            }
+        }
+
+        if rows.len() >= row_limit {
+            break;
+        }
+    }
+
     let formatted_rows = if batches.is_empty() {
         "(no rows found)".to_string()
     } else {
@@ -106,6 +148,8 @@ fn load_preview(path: &PathBuf, row_limit: usize) -> Result<DataPreview, ViewerE
     Ok(DataPreview {
         schema: parquet_schema,
         formatted_rows,
+        columns,
+        rows,
         row_count,
         column_count,
     })
@@ -128,43 +172,47 @@ fn launch_ui(preview: DataPreview) {
         gpui_component::init(app);
 
         let bounds = Bounds::centered(None, size(px(900.0), px(700.0)), app);
-        app.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(gpui::TitlebarOptions {
-                    title: Some("Parquet Viewer".into()),
+                app.open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(bounds)),
+                        titlebar: Some(gpui::TitlebarOptions {
+                            title: Some("Parquet Viewer".into()),
                     ..Default::default()
                 }),
                 ..Default::default()
-            },
-            move |_window, cx| {
-                cx.new(|_| PreviewView {
-                    preview: preview_data.clone(),
-                })
-            },
-        )
-        .unwrap();
+                    },
+                    move |_window, cx| {
+                        cx.new(|_| PreviewView {
+                            preview: preview_data.clone(),
+                            selected_cell: None,
+                        })
+                    },
+                )
+                .unwrap();
         app.activate(true);
     });
 }
 
 struct PreviewView {
     preview: DataPreview,
+    selected_cell: Option<(usize, usize)>,
 }
 
 impl gpui::Render for PreviewView {
     fn render(
         &mut self,
         _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
+        cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
-        let body = format!(
-            "Schema\n{}\n\nRows: {} | Columns: {}\n\n{}",
-            self.preview.schema,
-            self.preview.row_count,
-            self.preview.column_count,
-            self.preview.formatted_rows
+        let metadata = format!(
+            "Rows: {} | Columns: {}",
+            self.preview.row_count, self.preview.column_count
         );
+
+        let selected_text = self
+            .selected_cell
+            .map(|(row, col)| format!("Selected: row {}, column {}", row + 1, col + 1))
+            .unwrap_or_else(|| "Click a cell to select it".to_string());
 
         div()
             .flex()
@@ -175,16 +223,82 @@ impl gpui::Render for PreviewView {
             .child(div().text_xl().child("Parquet Overview"))
             .child(
                 div()
-                    .flex()
                     .flex_col()
                     .gap_2()
                     .w_full()
-                    .h_full()
-                    .font_family("monospace")
-                    .overflow_scrollbar()
-                    .child(body),
+                    .child(div().font_family("monospace").child(format!(
+                        "Schema\n{}",
+                        self.preview.schema
+                    )))
+                    .child(div().font_medium().child(metadata))
+                    .child(div().text_sm().child(selected_text))
+                    .child(render_table(&self.preview, self.selected_cell, cx)),
             )
     }
+}
+
+fn render_table(
+    preview: &DataPreview,
+    selected_cell: Option<(usize, usize)>,
+    cx: &mut gpui::Context<PreviewView>,
+) -> impl gpui::IntoElement {
+    let header = div()
+        .flex()
+        .flex_row()
+        .bg(rgb(0xF8FAFC))
+        .border_b_1()
+        .border_color(rgb(0xE5E7EB))
+        .children(preview.columns.iter().map(|name| {
+            div()
+                .px_2()
+                .py_1()
+                .font_medium()
+                .border_r_1()
+                .border_color(rgb(0xE5E7EB))
+                .child(name.clone())
+        }));
+
+    let rows = preview.rows.iter().enumerate().map(|(row_index, row)| {
+        div()
+            .flex()
+            .flex_row()
+            .border_b_1()
+            .border_color(rgb(0xE5E7EB))
+            .children(row.iter().enumerate().map(|(col_index, value)| {
+                let is_selected = selected_cell == Some((row_index, col_index));
+                let click_handler = cx.listener(move |view: &mut PreviewView, _: &gpui::MouseDownEvent, _window, _cx| {
+                    view.selected_cell = Some((row_index, col_index));
+                });
+
+                let background = if is_selected {
+                    rgb(0xDBEAFE)
+                } else if row_index % 2 == 0 {
+                    rgb(0xFFFFFF)
+                } else {
+                    rgb(0xF8FAFC)
+                };
+
+                div()
+                    .px_2()
+                    .py_1()
+                    .min_w(px(80.0))
+                    .border_r_1()
+                    .border_color(rgb(0xE5E7EB))
+                    .bg(background)
+                    .hover(|this| this.bg(rgb(0xE0F2FE)))
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, click_handler)
+                    .child(value.clone())
+            }))
+    });
+
+    div()
+        .border_1()
+        .border_color(rgb(0xE5E7EB))
+        .rounded_md()
+        .h(px(400.0))
+        .overflow_scrollbar()
+        .child(div().flex().flex_col().font_family("monospace").child(header).children(rows))
 }
 
 #[cfg(test)]
@@ -234,6 +348,9 @@ mod tests {
         assert_eq!(preview.column_count, 2);
         assert!(preview.formatted_rows.contains("id"));
         assert!(preview.formatted_rows.contains("name-0"));
+        assert_eq!(preview.columns, vec!["id".to_string(), "name".to_string()]);
+        assert_eq!(preview.rows.len(), 4);
+        assert_eq!(preview.rows[0], vec!["0".to_string(), "name-0".to_string()]);
     }
 
     #[test]
@@ -245,5 +362,6 @@ mod tests {
         assert!(preview.formatted_rows.contains("name-0"));
         assert!(preview.formatted_rows.contains("name-1"));
         assert!(!preview.formatted_rows.contains("name-2"));
+        assert_eq!(preview.rows.len(), 2);
     }
 }
