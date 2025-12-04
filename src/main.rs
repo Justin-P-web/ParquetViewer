@@ -52,7 +52,6 @@ enum ViewerError {
 #[derive(Clone)]
 struct DataPreview {
     path: PathBuf,
-    schema: String,
     formatted_rows: String,
     columns: Vec<String>,
     rows: Vec<Vec<String>>,
@@ -86,10 +85,6 @@ fn load_preview(path: &PathBuf, row_limit: usize) -> Result<DataPreview, ViewerE
     let metadata = SerializedFileReader::new(file.try_clone()?)?
         .metadata()
         .clone();
-    let parquet_schema = format!(
-        "{:#?}",
-        metadata.file_metadata().schema_descr().root_schema()
-    );
     let row_count = metadata.file_metadata().num_rows() as usize;
     let column_count = metadata.file_metadata().schema_descr().columns().len();
 
@@ -106,7 +101,6 @@ fn load_preview(path: &PathBuf, row_limit: usize) -> Result<DataPreview, ViewerE
 
     Ok(DataPreview {
         path: path.clone(),
-        schema: parquet_schema,
         formatted_rows,
         columns,
         rows,
@@ -184,7 +178,6 @@ fn batches_to_rows(
 }
 
 fn print_to_terminal(preview: &DataPreview) {
-    println!("Schema:\n{}", preview.schema);
     println!(
         "Rows: {} | Columns: {}\n",
         preview.row_count, preview.column_count
@@ -374,25 +367,9 @@ impl gpui::Render for PreviewView {
             .text_color(theme.foreground)
             .child(
                 div()
-                    .text_xl()
-                    .text_color(theme.primary_foreground)
-                    .child("Parquet Overview"),
-            )
-            .child(
-                div()
                     .flex_col()
                     .gap_2()
                     .w_full()
-                    .child(
-                        div()
-                            .font_family("monospace")
-                            .bg(theme.group_box)
-                            .border_1()
-                            .border_color(theme.border)
-                            .rounded(theme.radius)
-                            .p_2()
-                            .child(format!("Schema\n{}", self.preview.schema)),
-                    )
                     .child(
                         div()
                             .font_medium()
