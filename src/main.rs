@@ -202,14 +202,19 @@ const ROW_HEIGHT: f32 = 28.0;
 const MIN_TABLE_HEIGHT: f32 = 200.0;
 const TABLE_VERTICAL_MARGIN: f32 = 32.0;
 const TABLE_CHROME_HEIGHT: f32 = 180.0;
+const TABLE_BOTTOM_PADDING: f32 = 12.0;
 
 fn rows_per_view(height: Pixels) -> usize {
     ((f32::from(height) / ROW_HEIGHT).floor().max(1.0)) as usize
 }
 
 fn table_height_for_window(window: &gpui::Window) -> Pixels {
-    let window_height: f32 = window.window_bounds().get_bounds().size.height.into();
-    let available = (window_height - TABLE_VERTICAL_MARGIN - TABLE_CHROME_HEIGHT).max(MIN_TABLE_HEIGHT);
+    // Use the viewport size so that maximized windows report their actual content
+    // height instead of the restore size stored in `window_bounds`.
+    let window_height: f32 = window.viewport_size().height.into();
+    let available =
+        (window_height - TABLE_VERTICAL_MARGIN - TABLE_CHROME_HEIGHT - TABLE_BOTTOM_PADDING)
+            .max(MIN_TABLE_HEIGHT);
     px(available)
 }
 
