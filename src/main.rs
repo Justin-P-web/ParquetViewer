@@ -2,14 +2,13 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use arrow::record_batch::RecordBatch;
-use arrow::util::pretty::pretty_format_batches;
 use arrow::util::display::array_value_to_string;
+use arrow::util::pretty::pretty_format_batches;
 use clap::Parser;
 use gpui::{
-    div, prelude::*, px, rgb, size, App, Application, Bounds, MouseButton, WindowBounds,
-    WindowOptions,
+    div, prelude::*, px, size, App, Application, Bounds, MouseButton, WindowBounds, WindowOptions,
 };
-use gpui_component::{scroll::ScrollableElement, StyledExt};
+use gpui_component::{scroll::ScrollableElement, ActiveTheme, StyledExt};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::file::reader::FileReader;
 use parquet::file::reader::SerializedFileReader;
@@ -172,23 +171,23 @@ fn launch_ui(preview: DataPreview) {
         gpui_component::init(app);
 
         let bounds = Bounds::centered(None, size(px(900.0), px(700.0)), app);
-                app.open_window(
-                    WindowOptions {
-                        window_bounds: Some(WindowBounds::Windowed(bounds)),
-                        titlebar: Some(gpui::TitlebarOptions {
-                            title: Some("Parquet Viewer".into()),
+        app.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(gpui::TitlebarOptions {
+                    title: Some("Parquet Viewer".into()),
                     ..Default::default()
                 }),
                 ..Default::default()
-                    },
-                    move |_window, cx| {
-                        cx.new(|_| PreviewView {
-                            preview: preview_data.clone(),
-                            selected_cell: None,
-                        })
-                    },
-                )
-                .unwrap();
+            },
+            move |_window, cx| {
+                cx.new(|_| PreviewView {
+                    preview: preview_data.clone(),
+                    selected_cell: None,
+                })
+            },
+        )
+        .unwrap();
         app.activate(true);
     });
 }
@@ -214,24 +213,49 @@ impl gpui::Render for PreviewView {
             .map(|(row, col)| format!("Selected: row {}, column {}", row + 1, col + 1))
             .unwrap_or_else(|| "Click a cell to select it".to_string());
 
+        let theme = cx.theme();
+
         div()
             .flex()
             .flex_col()
             .gap_3()
             .p_4()
             .size_full()
-            .child(div().text_xl().child("Parquet Overview"))
+            .bg(theme.background)
+            .text_color(theme.foreground)
+            .child(
+                div()
+                    .text_xl()
+                    .text_color(theme.primary_foreground)
+                    .child("Parquet Overview"),
+            )
             .child(
                 div()
                     .flex_col()
                     .gap_2()
                     .w_full()
-                    .child(div().font_family("monospace").child(format!(
-                        "Schema\n{}",
-                        self.preview.schema
-                    )))
-                    .child(div().font_medium().child(metadata))
-                    .child(div().text_sm().child(selected_text))
+                    .child(
+                        div()
+                            .font_family("monospace")
+                            .bg(theme.group_box)
+                            .border_1()
+                            .border_color(theme.border)
+                            .rounded(theme.radius)
+                            .p_2()
+                            .child(format!("Schema\n{}", self.preview.schema)),
+                    )
+                    .child(
+                        div()
+                            .font_medium()
+                            .text_color(theme.muted_foreground)
+                            .child(metadata),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(selected_text),
+                    )
                     .child(render_table(&self.preview, self.selected_cell, cx)),
             )
     }
@@ -242,19 +266,22 @@ fn render_table(
     selected_cell: Option<(usize, usize)>,
     cx: &mut gpui::Context<PreviewView>,
 ) -> impl gpui::IntoElement {
+    let theme = cx.theme();
+
     let header = div()
         .flex()
         .flex_row()
-        .bg(rgb(0xF8FAFC))
+        .bg(theme.table_head)
+        .text_color(theme.table_head_foreground)
         .border_b_1()
-        .border_color(rgb(0xE5E7EB))
+        .border_color(theme.table_row_border)
         .children(preview.columns.iter().map(|name| {
             div()
                 .px_2()
                 .py_1()
                 .font_medium()
                 .border_r_1()
-                .border_color(rgb(0xE5E7EB))
+                .border_color(theme.table_row_border)
                 .child(name.clone())
         }));
 
@@ -263,19 +290,21 @@ fn render_table(
             .flex()
             .flex_row()
             .border_b_1()
-            .border_color(rgb(0xE5E7EB))
+            .border_color(theme.table_row_border)
             .children(row.iter().enumerate().map(|(col_index, value)| {
                 let is_selected = selected_cell == Some((row_index, col_index));
-                let click_handler = cx.listener(move |view: &mut PreviewView, _: &gpui::MouseDownEvent, _window, _cx| {
-                    view.selected_cell = Some((row_index, col_index));
-                });
+                let click_handler = cx.listener(
+                    move |view: &mut PreviewView, _: &gpui::MouseDownEvent, _window, _cx| {
+                        view.selected_cell = Some((row_index, col_index));
+                    },
+                );
 
                 let background = if is_selected {
-                    rgb(0xDBEAFE)
+                    theme.table_active
                 } else if row_index % 2 == 0 {
-                    rgb(0xFFFFFF)
+                    theme.table
                 } else {
-                    rgb(0xF8FAFC)
+                    theme.table_even
                 };
 
                 div()
@@ -283,9 +312,14 @@ fn render_table(
                     .py_1()
                     .min_w(px(80.0))
                     .border_r_1()
-                    .border_color(rgb(0xE5E7EB))
+                    .border_color(if is_selected {
+                        theme.table_active_border
+                    } else {
+                        theme.table_row_border
+                    })
                     .bg(background)
-                    .hover(|this| this.bg(rgb(0xE0F2FE)))
+                    .text_color(theme.foreground)
+                    .hover(|this| this.bg(theme.table_hover))
                     .cursor_pointer()
                     .on_mouse_down(MouseButton::Left, click_handler)
                     .child(value.clone())
@@ -294,11 +328,18 @@ fn render_table(
 
     div()
         .border_1()
-        .border_color(rgb(0xE5E7EB))
-        .rounded_md()
+        .border_color(theme.table_row_border)
+        .rounded(theme.radius)
         .h(px(400.0))
         .overflow_scrollbar()
-        .child(div().flex().flex_col().font_family("monospace").child(header).children(rows))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .font_family("monospace")
+                .child(header)
+                .children(rows),
+        )
 }
 
 #[cfg(test)]
