@@ -579,4 +579,59 @@ mod tests {
         assert!(!preview.formatted_rows.contains("name-2"));
         assert_eq!(preview.rows.len(), 2);
     }
+
+    #[test]
+    fn rows_for_range_fetches_requested_slice() {
+        let file = write_test_parquet(6).expect("parquet write should succeed");
+
+        let preview = load_preview(&file.path().to_path_buf(), 6).expect("preview should load");
+
+        let rows = preview
+            .rows_for_range(2..5)
+            .expect("range fetch should succeed");
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0], vec!["2".to_string(), "name-2".to_string()]);
+        assert_eq!(rows[2], vec!["4".to_string(), "name-4".to_string()]);
+    }
+
+    #[test]
+    fn rows_for_range_returns_empty_when_start_out_of_bounds() {
+        let file = write_test_parquet(2).expect("parquet write should succeed");
+
+        let preview = load_preview(&file.path().to_path_buf(), 2).expect("preview should load");
+
+        let rows = preview
+            .rows_for_range(5..8)
+            .expect("range fetch should succeed");
+
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn batches_to_rows_stops_at_limit() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new("name", DataType::Utf8, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int32Array::from(vec![1, 2, 3])),
+                Arc::new(StringArray::from(vec![
+                    "name-1".to_string(),
+                    "name-2".to_string(),
+                    "name-3".to_string(),
+                ])),
+            ],
+        )
+        .expect("record batch should build");
+
+        let rows = batches_to_rows(&[batch], 2).expect("rows should convert");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec!["1".to_string(), "name-1".to_string()]);
+        assert_eq!(rows[1], vec!["2".to_string(), "name-2".to_string()]);
+    }
 }
