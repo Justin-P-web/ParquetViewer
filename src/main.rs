@@ -408,6 +408,8 @@ fn render_table(
                 .px_2()
                 .py_1()
                 .font_medium()
+                .flex_1()
+                .min_w(px(80.0))
                 .border_r_1()
                 .border_color(theme.table_row_border)
                 .child(name.clone())
@@ -443,6 +445,7 @@ fn render_table(
                     div()
                         .px_2()
                         .py_1()
+                        .flex_1()
                         .min_w(px(80.0))
                         .border_r_1()
                         .border_color(if is_selected {
