@@ -200,7 +200,8 @@ impl DataPreview {
 
 const ROW_HEIGHT: f32 = 28.0;
 const MIN_TABLE_HEIGHT: f32 = 200.0;
-const TABLE_PADDING: f32 = 260.0;
+const TABLE_VERTICAL_MARGIN: f32 = 32.0;
+const TABLE_CHROME_HEIGHT: f32 = 180.0;
 
 fn rows_per_view(height: Pixels) -> usize {
     ((f32::from(height) / ROW_HEIGHT).floor().max(1.0)) as usize
@@ -208,7 +209,7 @@ fn rows_per_view(height: Pixels) -> usize {
 
 fn table_height_for_window(window: &gpui::Window) -> Pixels {
     let window_height: f32 = window.window_bounds().get_bounds().size.height.into();
-    let available = (window_height - TABLE_PADDING).max(MIN_TABLE_HEIGHT);
+    let available = (window_height - TABLE_VERTICAL_MARGIN - TABLE_CHROME_HEIGHT).max(MIN_TABLE_HEIGHT);
     px(available)
 }
 
@@ -295,9 +296,18 @@ impl PreviewView {
         window: &mut gpui::Window,
         cx: &mut gpui::Context<PreviewView>,
     ) {
-        self.table_height = table_height_for_window(window);
-        self.rows_per_view = rows_per_view(self.table_height);
-        self.load_visible_rows(self.visible_range.start, cx);
+        let new_table_height = table_height_for_window(window);
+        let new_rows_per_view = rows_per_view(new_table_height);
+
+        let rows_changed = new_rows_per_view != self.rows_per_view;
+        self.table_height = new_table_height;
+        self.rows_per_view = new_rows_per_view;
+
+        if rows_changed {
+            self.load_visible_rows(self.visible_range.start, cx);
+        } else {
+            cx.notify();
+        }
     }
 
     fn scroll_view(&mut self, delta_rows: isize, cx: &mut gpui::Context<PreviewView>) {
@@ -399,6 +409,7 @@ fn render_table(
     let header = div()
         .flex()
         .flex_row()
+        .w_full()
         .bg(theme.table_head)
         .text_color(theme.table_head_foreground)
         .border_b_1()
@@ -424,6 +435,7 @@ fn render_table(
             div()
                 .flex()
                 .flex_row()
+                .w_full()
                 .border_b_1()
                 .border_color(theme.table_row_border)
                 .children(row.iter().enumerate().map(|(col_index, value)| {
@@ -478,15 +490,21 @@ fn render_table(
         .border_color(theme.table_row_border)
         .rounded(theme.radius)
         .overflow_hidden()
+        .w_full()
+        .flex_1()
         .child(
             div()
                 .flex()
                 .flex_col()
+                .w_full()
+                .h_full()
                 .font_family("monospace")
                 .child(header)
                 .child(
                     div()
                         .h(view.table_height)
+                        .min_h(px(MIN_TABLE_HEIGHT))
+                        .w_full()
                         .overflow_hidden()
                         .on_scroll_wheel(scroll_handler)
                         .flex()
